@@ -48,18 +48,12 @@ type ExpressionWithTest =
   | TSESTree.IfStatement
   | TSESTree.WhileStatement;
 
-export type Options = [
-  {
-    ignoreRhs?: boolean;
-  },
-];
-
 export type MessageId =
   | 'alwaysTruthy'
   | 'alwaysFalsy'
   | 'literalBooleanExpression'
   | 'never';
-export default createRule<Options, MessageId>({
+export default createRule<[], MessageId>({
   name: 'no-unnecessary-conditionals',
   meta: {
     type: 'suggestion',
@@ -70,17 +64,7 @@ export default createRule<Options, MessageId>({
       recommended: false,
       requiresTypeChecking: true,
     },
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          ignoreRhs: {
-            type: 'boolean',
-          },
-        },
-        additionalProperties: false,
-      },
-    ],
+    schema: [],
     messages: {
       alwaysTruthy: 'Unnecessary conditional, value is always truthy.',
       alwaysFalsy: 'Unnecessary conditional, value is always falsy.',
@@ -89,12 +73,8 @@ export default createRule<Options, MessageId>({
       never: 'Unnecessary conditional, value is `never`',
     },
   },
-  defaultOptions: [
-    {
-      ignoreRhs: false,
-    },
-  ],
-  create(context, [{ ignoreRhs }]) {
+  defaultOptions: [],
+  create(context) {
     const service = getParserServices(context);
     const checker = service.program.getTypeChecker();
 
@@ -108,6 +88,11 @@ export default createRule<Options, MessageId>({
      * if the type of the node is always true or always false, it's not necessary.
      */
     function checkNode(node: TSESTree.Node): void {
+      // When checking logical expressions, only check the right side
+      //  as the left side has been checked by checkLogicalExpressionForUnnecessaryConditionals
+      if (node.type === AST_NODE_TYPES.LogicalExpression) {
+        return checkNode(node.right);
+      }
       const type = getNodeType(node);
 
       // Conditional is always necessary if it involves `any` or `unknown`
@@ -154,15 +139,11 @@ export default createRule<Options, MessageId>({
 
     /**
      * Checks that a testable expression is necessarily conditional, reports otherwise.
-     * Filters all LogicalExpressions to prevent some duplicate reports.
      */
     function checkIfTestExpressionIsNecessaryConditional(
       node: ExpressionWithTest,
     ): void {
-      if (
-        node.test !== null &&
-        node.test.type !== AST_NODE_TYPES.LogicalExpression
-      ) {
+      if (node.test !== null) {
         checkNode(node.test);
       }
     }
@@ -173,10 +154,9 @@ export default createRule<Options, MessageId>({
     function checkLogicalExpressionForUnnecessaryConditionals(
       node: TSESTree.LogicalExpression,
     ): void {
+      // Only checks the left side, since the right side might not be "conditional" at all.
+      // The right side will be checked if the LogicalExpression is used in a conditional context
       checkNode(node.left);
-      if (!ignoreRhs) {
-        checkNode(node.right);
-      }
     }
 
     return {
